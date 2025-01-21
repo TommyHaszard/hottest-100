@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use rocket::fs::NamedFile;
 use rocket::http::{Cookie, CookieJar, Status};
 use serde::Serialize;
-use crate::{db, SpotifyState, DB_POOL};
+use crate::{db, DB_POOL};
 
 static SPOTIFY_AUTH_URL: &str = "https://accounts.spotify.com/authorize";
 static SPOTIFY_TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
@@ -104,11 +104,6 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
 
     cookies.add_private(Cookie::new("api_token", data.access_token));
 
-    //let mut token = access_token.token.lock().unwrap();
-    //*token = Some(data.access_token.clone());
-
-    // Set the access token to a global state, session, or pass it to the next route (this can be done with a more robust state management system)
-    // Redirect to main route with the access token
     Redirect::to("/main")
 }
 
@@ -197,25 +192,6 @@ pub async fn search_songs(
             })?;
 
             let items = data["tracks"]["items"].as_array();
-            // let songs = items.unwrap().to_vec()
-            //     .iter()
-            //     .map(|item| Song {
-            //         key: format!("{}{}", item["name"].as_str().unwrap_or_default().to_string(), item["artists"][0]["name"]
-            //             .as_str()
-            //             .unwrap_or_default()
-            //             .to_string(),),
-            //         name: item["name"].as_str().unwrap_or_default().to_string(),
-            //         artist: item["artists"][0]["name"]
-            //             .as_str()
-            //             .unwrap_or_default()
-            //             .to_string(),
-            //         uri: item["uri"].as_str().unwrap_or_default().to_string(),
-            //         image_url: item["album"]["images"][1]["url"]
-            //             .as_str()
-            //             .unwrap_or_default()
-            //             .to_string(),
-            //     })
-            //     .collect();
 
             let mut seen_keys = HashSet::new();
             let songs: Vec<Song> = items.unwrap()
@@ -266,27 +242,3 @@ pub async fn search_songs(
         )),
     }
 }
-//
-// #[get("/add-to-ranked-list?<query..>")]
-//     pub async fn add_to_ranked_list(
-//         query: Option<SearchQuery>,
-//         client: &State<Client>,
-//         state: &State<SpotifyState>,
-//     ) -> Result<Status, Json<ErrorResponse>> {
-//     let query = query.unwrap();
-//
-//     // Get the user
-//     let user = {
-//         let guard = state.user.lock().unwrap();
-//         guard.clone()
-//     };
-//
-//     if user.is_none() {
-//         Err(
-//             Json(ErrorResponse {
-//                 error: "Access token missing".to_string(),
-//             }),
-//         )
-//     }
-//
-// }

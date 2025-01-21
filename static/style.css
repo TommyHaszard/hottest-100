@@ -1,4 +1,3 @@
-/* Basic styles for the leaderboard page */
 body {
     font-family: Arial, sans-serif;
     background-color: #f4f4f4;
@@ -41,9 +40,9 @@ h1 {
 
 #content {
     margin-top: 30px;
-    display: grid; /* Enables grid layout */
-    grid-auto-flow: column; /* Places items in a single row */
-    gap: 10px; /* Spacing between items */
+    display: grid;
+    grid-auto-flow: column;
+    gap: 10px;
 }
 
 #left {

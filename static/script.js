@@ -1,6 +1,14 @@
 // Fetch the leaderboard of songs
 const rankedSongs = new Map();
 
+
+// Initial page load
+window.onload = () => {
+    const path = window.location.pathname.split('/')[1];
+    displayAddSongForm();
+    fetchLeaderboardInitial();
+};
+
 async function fetchLeaderboardInitial() {
     try {
         const response = await fetch('/user-ranked-songs');
@@ -21,31 +29,6 @@ async function fetchLeaderboardInitial() {
         });
 
         fetchLeaderboard();
-
-        // rankedSongs.forEach((song) => {
-        //     const songItem = document.createElement('div');
-        //     songItem.classList.add('song-item');
-        //
-        //     const songName = document.createElement('div');
-        //     songName.classList.add('song-name');
-        //     songName.textContent = song.name;
-        //
-        //     const songArtist = document.createElement('div');
-        //     songArtist.classList.add('song-artist');
-        //     songArtist.textContent = song.artist;
-        //
-        //     const songRank = document.createElement('div');
-        //     songRank.classList.add('song-rank');
-        //     songRank.textContent = `Rank #${song.rank}`;
-        //
-        //     songItem.appendChild(songName);
-        //     songItem.appendChild(songArtist);
-        //     songItem.appendChild(songRank);
-        //
-        //     leaderboard.appendChild(songItem);
-        // });
-        //
-        // leaderboardContainer.appendChild(leaderboard);
     } catch (error) {
         document.getElementById('left').innerHTML = '<p>No songs ranked yet.</p>';
         console.error('Error fetching leaderboard:', error);
@@ -82,10 +65,9 @@ async function fetchLeaderboard() {
         songRank.classList.add('song-rank');
         songRank.textContent = `Rank #${song.rank}`;
 
-        // Create an image element for the album art
         const albumArt = document.createElement('img');
         albumArt.classList.add('song-album');
-        albumArt.src = song.image_url; // Replace with the actual image URL from your song object
+        albumArt.src = song.image_url;
         albumArt.alt = `${song.artist} - Album Art`;
         albumArt.height = 150;
         albumArt.width = 150;
@@ -125,7 +107,6 @@ function displayAddSongForm() {
       </form>
   `;
 
-    // Handle form submission
     const form = document.getElementById('add-song-form');
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -133,12 +114,10 @@ function displayAddSongForm() {
         const songName = document.getElementById('song-name').value;
         const songRank = document.getElementById('song-rank').value;
 
-
         const queryParams = new URLSearchParams({
             track: songName,
             rank: songRank
         });
-
 
         try {
             const search_response = await fetch(`/search-songs?${queryParams}`, {
@@ -146,7 +125,7 @@ function displayAddSongForm() {
             });
 
             if (search_response.ok) {
-                const songs = await search_response.json(); // Parse JSON from the response
+                const songs = await search_response.json();
                 console.log('Songs:', songs);
                 displaySongs(songs, songRank);
             }
@@ -157,46 +136,6 @@ function displayAddSongForm() {
     });
 }
 
-// Handle back and forward browser navigation
-window.addEventListener('popstate', (event) => {
-    if (event.state && event.state.page === 'leaderboard') {
-        fetchLeaderboard();
-    } else if (event.state && event.state.page === 'add-song') {
-        displayAddSongForm();
-    }
-});
-
-// Initial page load
-window.onload = () => {
-    const path = window.location.pathname.split('/')[1];
-    displayAddSongForm();
-    fetchLeaderboardInitial();
-};
-
-async function handleAddToRankedList(song, songRank){
-    const queryParams = new URLSearchParams({
-        track: song,
-        rank: songRank
-    });
-
-    try {
-        const response = await fetch(`/add-to-ranked-list?${queryParams}`, {
-            method: 'POST',
-        });
-
-        if (response.ok) {
-            displayAddSongForm();
-        } else {
-            alert('Failed to add song.');
-        }
-    } catch (error) {
-        console.error('Error adding song:', error);
-        alert('Error adding song.');
-    }
-    ;
-}
-
-// Function to display songs in the UI with rank input
 function displaySongs(songs, songRank) {
     const songListContainer = document.getElementById('right');
     songListContainer.innerHTML = '';  // Clear the list first
@@ -218,15 +157,13 @@ function displaySongs(songs, songRank) {
         rankElement.classList.add('rank-element');
         rankElement.textContent = `Rank: ${song.rank}`;
 
-        // Create an image element for the album art
         const albumArt = document.createElement('img');
         albumArt.classList.add('album-art');
-        albumArt.src = song.image_url; // Replace with the actual image URL from your song object
+        albumArt.src = song.image_url;
         albumArt.alt = `${song.artist} - Album Art`;
         albumArt.height = 200;
         albumArt.width = 200;
 
-        // Add song rank to list when selected
         const rankButton = document.createElement('button');
         rankButton.textContent = 'Add to List';
         rankButton.onclick = () => {
@@ -243,4 +180,26 @@ function displaySongs(songs, songRank) {
 
         songListContainer.appendChild(songDiv);
     });
+}
+
+async function handleAddToRankedList(song, songRank){
+    const queryParams = new URLSearchParams({
+        track: song,
+        rank: songRank
+    });
+
+    try {
+        const response = await fetch(`/add-to-ranked-list?${queryParams}`, {
+            method: 'POST',
+        });
+
+        if (response.ok) {
+            displayAddSongForm();
+        } else {
+            alert('Failed to add song.');
+        }
+    } catch (error) {
+        console.error('Error adding song:', error);
+        alert('Error adding song.');
+    }
 }
