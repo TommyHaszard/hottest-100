@@ -1,5 +1,6 @@
 // Fetch the leaderboard of songs
 const rankedSongs = new Map();
+const songKey = new Set();
 
 
 // Initial page load
@@ -11,7 +12,9 @@ window.onload = () => {
 
 async function fetchLeaderboardInitial() {
     try {
-        const response = await fetch('/user-ranked-songs');
+        const response = await fetch('/songs', {
+            method: 'GET',
+        });
         const songs = await response.json();
 
         const leaderboardContainer = document.getElementById('left');
@@ -51,7 +54,10 @@ async function fetchLeaderboard() {
     sortedSongs.forEach((song, index) => {
 
         const song_container = document.createElement('div');
-        song_container.classList.add('song');
+        song_container.classList.add('ranked-song');
+
+        const rank_wrapper = document.createElement('div');
+        rank_wrapper.classList.add('ranked-songs-wrapper');
 
         const songName = document.createElement('div');
         songName.classList.add('song-name');
@@ -67,17 +73,19 @@ async function fetchLeaderboard() {
 
         const albumArt = document.createElement('img');
         albumArt.classList.add('song-album');
-        albumArt.src = song.image_url;
+        albumArt.src = song.album_cover_url;
         albumArt.alt = `${song.artist} - Album Art`;
-        albumArt.height = 150;
-        albumArt.width = 150;
+        albumArt.height = 100;
+        albumArt.width = 100;
 
         song_container.appendChild(songName)
         song_container.appendChild(songArtist);
-        song_container.appendChild(albumArt)
         song_container.appendChild(songRank);
 
-        leaderboard.appendChild(song_container);
+        rank_wrapper.appendChild(albumArt)
+        rank_wrapper.appendChild(song_container)
+
+        leaderboard.appendChild(rank_wrapper);
     });
 
     const saveButtonArea = document.createElement('div');
@@ -86,7 +94,7 @@ async function fetchLeaderboard() {
     const saveButton = document.createElement('button');
     saveButton.textContent = 'Save!';
     saveButton.onclick = () => {
-
+        persistSongs(rankedSongs)
     }
 
     saveButtonArea.appendChild(saveButton)
@@ -141,7 +149,7 @@ function displaySongs(songs, songRank) {
     songListContainer.innerHTML = '';  // Clear the list first
 
     songs.forEach((song) => {
-        song.rank = songRank;
+        song.rank = Number(songRank);
         const songDiv = document.createElement('div');
         songDiv.classList.add('song');
 
@@ -159,7 +167,7 @@ function displaySongs(songs, songRank) {
 
         const albumArt = document.createElement('img');
         albumArt.classList.add('album-art');
-        albumArt.src = song.image_url;
+        albumArt.src = song.album_cover_url;
         albumArt.alt = `${song.artist} - Album Art`;
         albumArt.height = 200;
         albumArt.width = 200;
@@ -167,7 +175,12 @@ function displaySongs(songs, songRank) {
         const rankButton = document.createElement('button');
         rankButton.textContent = 'Add to List';
         rankButton.onclick = () => {
-            rankedSongs.set(song.rank, song);
+            if (songKey.has(song.name+song.artist)) {
+                alert('Duplicate song try again!');
+            } else {
+                rankedSongs.set(song.rank, song);
+                songKey.add(song.name+song.artist);
+            }
             fetchLeaderboard();
             displayAddSongForm();
         }
@@ -182,21 +195,26 @@ function displaySongs(songs, songRank) {
     });
 }
 
-async function handleAddToRankedList(song, songRank){
-    const queryParams = new URLSearchParams({
-        track: song,
-        rank: songRank
-    });
+async function persistSongs(songs){
+
+    if(songs.length < 10) {
+        alert('Ensure you have 10 songs added!');
+        return;
+    }
 
     try {
-        const response = await fetch(`/add-to-ranked-list?${queryParams}`, {
+        const response = await fetch(`/songs`, {
             method: 'POST',
+            body: JSON.stringify(Array.from(songs.values())), // Convert songs to JSON string
+            headers: {
+                'Content-Type': 'application/json' // Specify content type as JSON
+            }
         });
 
         if (response.ok) {
-            displayAddSongForm();
+            alert('Wooohooo! Successfully saved songs!');
         } else {
-            alert('Failed to add song.');
+            alert('Failed to persist songs please try again.');
         }
     } catch (error) {
         console.error('Error adding song:', error);

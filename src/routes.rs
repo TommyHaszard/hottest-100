@@ -27,16 +27,13 @@ pub async fn index() -> Redirect {
         Redirect::to("/fail");
     }
 
-    let redirect_uri = db::get_redirect_uri(db_pool).await.expect("Failed to get client id");
-    if redirect_uri.is_none() {
-        Redirect::to("/fail");
-    }
+    let redirect_uri = std::env::var("SPOTIFY_REDIRECT_URI").expect("SPOTIFY_REDIRECT_URI must be set");
 
     let auth_url = format!(
         "{}?client_id={}&response_type=code&redirect_uri={}&scope=playlist-modify-public%20user-read-private&state=random_state_string",
         SPOTIFY_AUTH_URL,
         client_id.unwrap(),
-        urlencoding::encode(&redirect_uri.unwrap())
+        urlencoding::encode(&redirect_uri)
     );
     Redirect::to(auth_url)
 }
@@ -54,11 +51,7 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
         Redirect::to("/fail");
     }
 
-    let redirect_uri = db::get_redirect_uri(db_pool).await.expect("Failed to get client id");
-    if redirect_uri.is_none() {
-        Redirect::to("/fail");
-    }
-
+    let redirect_uri = std::env::var("SPOTIFY_REDIRECT_URI").expect("SPOTIFY_REDIRECT_URI must be set");
 
     let client = Client::new();
     let response = client
@@ -67,7 +60,7 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
         .form(&[
             ("grant_type", "authorization_code"),
             ("code", &code),
-            ("redirect_uri", &redirect_uri.unwrap()),
+            ("redirect_uri", &redirect_uri),
             ("client_id", &client_id.unwrap()),
             ("client_secret", &client_secret.unwrap()),
         ])
@@ -97,7 +90,7 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
         }
         res => {
             // Handle other HTTP statuses
-            println!("Response was not successful: {:?}:{:?}", res.status(), res.json::<serde_json::Value>().await.expect("Failed to get error msg"));
+            rocket::error!("Response was not successful: {:?}", res.status());
         }
     }
 
@@ -128,18 +121,19 @@ pub async fn files(file: PathBuf) -> Option<NamedFile> {
 
 // Struct to parse the query parameters
 #[derive(FromForm)]
-struct SearchQuery {
+struct SearchSongsQuery {
     track: Option<String>,
-    rank: Option<String>,
+    rank: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct Song {
-    pub key: String,
+    pub key: Option<String>,
     pub name: String,
     pub uri: String,
     pub artist: String,
-    pub image_url: String,
+    pub album_cover_url: String,
+    pub rank: Option<i32>
 }
 
 #[derive(Serialize)]
@@ -150,7 +144,7 @@ struct ErrorResponse {
 #[get("/search-songs?<query..>")]
 pub async fn search_songs(
     cookies: &CookieJar<'_>,
-    query: Option<SearchQuery>,
+    query: Option<SearchSongsQuery>,
     client: &State<Client>,
 ) -> Result<Json<Vec<Song>>, (Status, Json<ErrorResponse>)> {
     let query = query.unwrap();
@@ -170,6 +164,8 @@ pub async fn search_songs(
 
     // Extract the track name from the query
     let track_name = query.track.unwrap();
+    let rank = query.rank.unwrap();
+
     let spotify_url = format!(
         "https://api.spotify.com/v1/search?q={}&type=track&limit=10",
         track_name
@@ -208,14 +204,15 @@ pub async fn search_songs(
                     }
 
                     Some(Song {
-                        key,
+                        key: Some(key),
                         name,
                         artist,
                         uri: item["uri"].as_str().unwrap_or_default().to_string(),
-                        image_url: item["album"]["images"][1]["url"]
+                        album_cover_url: item["album"]["images"][1]["url"]
                             .as_str()
                             .unwrap_or_default()
                             .to_string(),
+                        rank: Some(rank),
                     })
                 })
                 .collect();
@@ -241,4 +238,78 @@ pub async fn search_songs(
             }),
         )),
     }
+}
+
+#[post("/songs", format = "json", data = "<songs>")]
+    pub async fn save_songs(
+        cookies: &CookieJar<'_>,
+        songs: Json<Vec<Song>>,
+    ) -> Result<(), (Status, Json<ErrorResponse>)> {
+
+        let db_pool = DB_POOL.get().unwrap();
+        let user_name_opt = cookies.get_private("user").map(|cookie| cookie.value().to_string());
+
+        if user_name_opt.is_none() {
+            return Err((
+                Status::InternalServerError,
+                Json(ErrorResponse {
+                    error: "No Token".to_string(),
+                }),
+            ));
+        }
+
+        let user_name = user_name_opt.unwrap();
+        let user = db::get_or_insert_user(db_pool, &user_name).await.map_err(|err| {
+            (
+                Default::default(),
+                Json(ErrorResponse {
+                    error: format!("Database error: {}", err),
+                }),
+            )
+        })?;
+
+        db::insert_or_update_songs(db_pool, &user.id, &songs).await.map_err(|err| {
+            (
+                Status::InternalServerError,
+                Json(ErrorResponse {
+                    error: format!("Failed to insert or update the list of songs: {}", err),
+                }),
+            )
+        })?;
+
+        // add songs
+        Ok(())
+}
+
+
+#[get("/songs")]
+pub async fn get_songs(
+    cookies: &CookieJar<'_>,
+) -> Result<Json<Vec<Song>>, (Status, Json<ErrorResponse>)> {
+
+    let db_pool = DB_POOL.get().unwrap();
+    let user_name_opt = cookies.get_private("user").map(|cookie| cookie.value().to_string());
+
+    if user_name_opt.is_none() {
+        return Err((
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: "No Token".to_string(),
+            }),
+        ));
+    }
+
+    let user_name = user_name_opt.unwrap();
+    let songs = db::get_songs_for_user_name(db_pool, &user_name).await.map_err(|err| {
+        (
+            Default::default(),
+            Json(ErrorResponse {
+                error: format!("Database error: {}", err),
+            }),
+        )
+    })?;
+
+    rocket::info!("Tracks {:#?}", songs);
+
+    Ok(Json(songs))
 }

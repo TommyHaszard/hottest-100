@@ -3,7 +3,6 @@ mod db;
 
 #[macro_use] extern crate rocket;
 
-use std::sync::Mutex;
 use dotenv::dotenv;
 use reqwest::Client;
 use rocket::fairing::AdHoc;
@@ -27,12 +26,15 @@ async fn init_pool() -> PgPool {
 
 #[launch]
 fn rocket() -> _ {
-    rocket::build()
+    let figment = rocket::Config::figment()
+        .merge(("port", 8080))
+        .merge(("address", "0.0.0.0"));
+    rocket::custom(figment)
         .attach(AdHoc::on_ignite("Database Pool", |rocket| async {
             let pool = init_pool().await;
             DB_POOL.set(pool).unwrap();
             rocket }))
         .manage(Client::new())
-        .mount("/", routes![routes::index, routes::callback, routes::main_page, routes::files, routes::search_songs])
-        .mount("/main", FileServer::from("static"))
+        .mount("/", routes![routes::index, routes::callback, routes::main_page, routes::files, routes::search_songs, routes::save_songs, routes::get_songs])
+        .mount("/main", FileServer::from("/app/static"))
 }

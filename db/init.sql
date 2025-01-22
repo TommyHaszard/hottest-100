@@ -23,5 +23,7 @@ CREATE TABLE config (
     value TEXT NOT NULL
 );
 
+ALTER TABLE users ADD CONSTRAINT users_name_key UNIQUE (name);
 ALTER TABLE songs ADD CONSTRAINT unique_name_artist UNIQUE (name, artist);
+ALTER TABLE rankings ADD CONSTRAINT unique_user_rank UNIQUE (user_id, rank);
 
