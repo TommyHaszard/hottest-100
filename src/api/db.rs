@@ -1,7 +1,6 @@
 use sqlx::{FromRow, Transaction};
 use sqlx_postgres::{PgPool, Postgres};
-use crate::routes;
-use crate::routes::Song;
+use crate::api::types::Song;
 
 #[derive(FromRow)]
 pub struct User {
@@ -57,7 +56,7 @@ pub async fn get_user(pool: &PgPool, name: &str) -> Result<Option<User>, sqlx::E
 pub async fn insert_or_update_songs(
     pool: &PgPool,
     user_id: &i32,
-    songs: &Vec<routes::Song>,
+    songs: &Vec<Song>,
 ) -> Result<(), sqlx::Error> {
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
 
@@ -151,4 +150,30 @@ pub async fn get_songs_for_user_name(pool: &PgPool, name: &String) -> Result<Vec
     }).collect();
 
     Ok(songs)
+}
+
+#[derive(sqlx::FromRow, Debug)]
+struct Uri {
+    uri: String,
+}
+
+pub async fn get_song_rankings(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query_as!(
+        Uri,
+        r#"
+        SELECT
+            s.uri as URI
+        FROM
+            songs s
+        LEFT JOIN
+            rankings r ON s.id = r.song_id
+        GROUP BY
+            s.id, s.name
+        ORDER BY
+            COUNT(r.user_id) + COALESCE(0.15 * (11-AVG(r.rank)), 0) DESC, s.name
+        "#,
+    ).fetch_all(pool).await?;
+
+    Ok(rows.into_iter().map(|song| song.uri).collect())
+
 }

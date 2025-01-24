@@ -1,23 +1,17 @@
 use std::collections::HashSet;
-use rocket::tokio::task;
-use rocket::response::Redirect;
-use rocket::serde::{json::Json, Deserialize};
-use reqwest::{Client, Error, Response};
-use rocket::State;
 use std::env;
-use std::path::{Path, PathBuf};
-use rocket::fs::NamedFile;
+use reqwest::Client;
 use rocket::http::{Cookie, CookieJar, Status};
-use serde::Serialize;
-use crate::{db, DB_POOL};
+use rocket::response::Redirect;
+use rocket::serde::json::Json;
+use rocket::State;
+use rocket::time::Duration;
+use crate::DB_POOL;
+use crate::api::db;
+use crate::api::types::{AccessTokenResponse, CreatePlaylistBody, CreatePlaylistId, ErrorResponse, SearchSongsQuery, Song};
 
 static SPOTIFY_AUTH_URL: &str = "https://accounts.spotify.com/authorize";
 static SPOTIFY_TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
-
-#[derive(Deserialize)]
-struct AccessTokenResponse {
-    access_token: String,
-}
 
 #[get("/")]
 pub async fn index() -> Redirect {
@@ -27,7 +21,7 @@ pub async fn index() -> Redirect {
         Redirect::to("/fail");
     }
 
-    let redirect_uri = std::env::var("SPOTIFY_REDIRECT_URI").expect("SPOTIFY_REDIRECT_URI must be set");
+    let redirect_uri = env::var("SPOTIFY_REDIRECT_URI").expect("SPOTIFY_REDIRECT_URI must be set");
 
     let auth_url = format!(
         "{}?client_id={}&response_type=code&redirect_uri={}&scope=playlist-modify-public%20user-read-private&state=random_state_string",
@@ -46,7 +40,7 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
         Redirect::to("/fail");
     }
 
-    let client_secret = db::get_client_secret(db_pool).await.expect("Failed to get client id");
+    let client_secret = db::get_client_secret(db_pool).await.expect("publicled to get client id");
     if client_secret.is_none() {
         Redirect::to("/fail");
     }
@@ -73,8 +67,7 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
         .await
         .expect("Failed to parse token response");
 
-    let profile_url =
-        "https://api.spotify.com/v1/me";
+    let profile_url = "https://api.spotify.com/v1/me";
 
     let response = client
         .get(profile_url)
@@ -86,7 +79,11 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
         res if res.status().is_success() => {
             let data = &res.json::<serde_json::Value>().await.expect("Failed to get access token");
             rocket::info!("Data {:#?}", data);
-            cookies.add_private(Cookie::new("user", data["uri"].to_string()));
+            cookies.add_private(
+                Cookie::build(("user", data["uri"].to_string()))
+                    .http_only(true)
+                    .secure(true)
+                    .max_age(Duration::minutes(60)))
         }
         res => {
             // Handle other HTTP statuses
@@ -95,50 +92,104 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
     }
 
 
-    cookies.add_private(Cookie::new("api_token", data.access_token));
+    cookies.add_private(
+        Cookie::build(("api_token", data.access_token))
+            .http_only(true)
+            .secure(true)
+            .max_age(Duration::minutes(60)));
 
     Redirect::to("/main")
 }
 
-#[get("/main")]
-pub async fn main_page(cookies: &CookieJar<'_>) -> NamedFile {
-    let token = cookies.get_private("api_token").map(|cookie| cookie.value().to_string());
-    if token.is_none() {
+pub async fn create_playlist(cookies: &CookieJar<'_>,
+                             client: &State<Client>) -> Result<CreatePlaylistId, (Status, Json<ErrorResponse>)> {
+    let user_name_opt = cookies.get_private("user").map(|cookie| cookie.value().to_string());
 
-        Redirect::to("/");
+    if user_name_opt.is_none() {
+        return Err((
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: "No Token".to_string(),
+            }),
+        ));
     }
-    let mut file_path = PathBuf::from("static");
-    file_path.push("index.html");
 
-    NamedFile::open(Path::new("static/index.html")).await.unwrap()
+    let user_name = user_name_opt.unwrap();
 
-}
+    let split_name = user_name.split(':').nth(2).ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: "Failed to parse Username to parse into Spotify API".to_string(),
+            }),
+        )
+    })?;
 
-#[get("/<file..>")]
-pub async fn files(file: PathBuf) -> Option<NamedFile> {
-    NamedFile::open(Path::new("static").join(file)).await.ok()
-}
+    let access_token_opt = cookies.get_private("api_token").map(|cookie| cookie.value().to_string());
+    if access_token_opt.is_none() {
+        return Err((
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: "No Token".to_string(),
+            }),
+        ));
+    }
 
-// Struct to parse the query parameters
-#[derive(FromForm)]
-struct SearchSongsQuery {
-    track: Option<String>,
-    rank: Option<i32>,
-}
+    let access_token = access_token_opt.unwrap();
 
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct Song {
-    pub key: Option<String>,
-    pub name: String,
-    pub uri: String,
-    pub artist: String,
-    pub album_cover_url: String,
-    pub rank: Option<i32>
-}
+    let json_body = serde_json::to_string(&CreatePlaylistBody {
+        name: "Hottest100".to_string(),
+        description: "Hottest100".to_string(),
+        public: true,
+    }).map_err(|err| {
+        (
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: format!("Failed to parse Username to parse into Spotify API: {}", err),
+            }),
+        )
+    })?;
 
-#[derive(Serialize)]
-struct ErrorResponse {
-    error: String,
+    let create_spotify_playlist = format!(
+        "https://api.spotify.com/v1/users/{}/playlists",
+        split_name
+    );
+
+    let response = client
+        .post(&create_spotify_playlist)
+        .body(json_body)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await.map_err(|err| {
+        (
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: format!("Failed to create Playlist via Spotify API: {}", err),
+            }),
+        )
+    })?;
+
+    if response.status().is_success() {
+        if let Ok(data) = response.json::<serde_json::Value>().await {
+            let id = &data["id"];
+            // Process the `id` here
+            Ok(CreatePlaylistId { id: id.to_string() })
+        } else {
+            Err((
+                Status::InternalServerError,
+                Json(ErrorResponse {
+                    error: "Failed to parse Spotify API response".to_string(),
+                }),
+            ))
+        }
+    } else {
+        Err((
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: "Failed to parse Spotify API response".to_string(),
+            }),
+        ))
+    }
 }
 
 #[get("/search-songs?<query..>")]
@@ -152,12 +203,16 @@ pub async fn search_songs(
     let token = cookies.get_private("api_token").map(|cookie| cookie.value().to_string());
 
     if token.is_none() {
-        return Err((
-            Status::InternalServerError,
-            Json(ErrorResponse {
-                error: "No Token".to_string(),
-            }),
-        ));
+        index().await;
+        let token2 = cookies.get_private("api_token").map(|cookie| cookie.value().to_string());
+        if token2.is_none() {
+            return Err((
+                Status::InternalServerError,
+                Json(ErrorResponse {
+                    error: "No Token".to_string(),
+                }),
+            ));
+        }
     }
 
     let access_token = token.unwrap();
@@ -238,78 +293,4 @@ pub async fn search_songs(
             }),
         )),
     }
-}
-
-#[post("/songs", format = "json", data = "<songs>")]
-    pub async fn save_songs(
-        cookies: &CookieJar<'_>,
-        songs: Json<Vec<Song>>,
-    ) -> Result<(), (Status, Json<ErrorResponse>)> {
-
-        let db_pool = DB_POOL.get().unwrap();
-        let user_name_opt = cookies.get_private("user").map(|cookie| cookie.value().to_string());
-
-        if user_name_opt.is_none() {
-            return Err((
-                Status::InternalServerError,
-                Json(ErrorResponse {
-                    error: "No Token".to_string(),
-                }),
-            ));
-        }
-
-        let user_name = user_name_opt.unwrap();
-        let user = db::get_or_insert_user(db_pool, &user_name).await.map_err(|err| {
-            (
-                Default::default(),
-                Json(ErrorResponse {
-                    error: format!("Database error: {}", err),
-                }),
-            )
-        })?;
-
-        db::insert_or_update_songs(db_pool, &user.id, &songs).await.map_err(|err| {
-            (
-                Status::InternalServerError,
-                Json(ErrorResponse {
-                    error: format!("Failed to insert or update the list of songs: {}", err),
-                }),
-            )
-        })?;
-
-        // add songs
-        Ok(())
-}
-
-
-#[get("/songs")]
-pub async fn get_songs(
-    cookies: &CookieJar<'_>,
-) -> Result<Json<Vec<Song>>, (Status, Json<ErrorResponse>)> {
-
-    let db_pool = DB_POOL.get().unwrap();
-    let user_name_opt = cookies.get_private("user").map(|cookie| cookie.value().to_string());
-
-    if user_name_opt.is_none() {
-        return Err((
-            Status::InternalServerError,
-            Json(ErrorResponse {
-                error: "No Token".to_string(),
-            }),
-        ));
-    }
-
-    let user_name = user_name_opt.unwrap();
-    let songs = db::get_songs_for_user_name(db_pool, &user_name).await.map_err(|err| {
-        (
-            Default::default(),
-            Json(ErrorResponse {
-                error: format!("Database error: {}", err),
-            }),
-        )
-    })?;
-
-    rocket::info!("Tracks {:#?}", songs);
-
-    Ok(Json(songs))
 }

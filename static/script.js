@@ -29,6 +29,7 @@ async function fetchLeaderboardInitial() {
         const leaderboard = document.createElement('div');
         songs.forEach((song, index) => {
             rankedSongs.set(song.rank, song);
+            songKey.add(song.name+song.artist)
         });
 
         fetchLeaderboard();
@@ -148,6 +149,18 @@ function displaySongs(songs, songRank) {
     const songListContainer = document.getElementById('right');
     songListContainer.innerHTML = '';  // Clear the list first
 
+    const goBackButtonArea = document.createElement('div');
+    goBackButtonArea.classList.add("go-back-button");
+
+    const goBackButton = document.createElement('button');
+    goBackButton.textContent = 'Go Back!';
+    goBackButton.onclick = () => {
+        displayAddSongForm()
+    }
+
+    goBackButtonArea.appendChild(goBackButton)
+    songListContainer.appendChild(goBackButtonArea);
+
     songs.forEach((song) => {
         song.rank = Number(songRank);
         const songDiv = document.createElement('div');
@@ -178,6 +191,10 @@ function displaySongs(songs, songRank) {
             if (songKey.has(song.name+song.artist)) {
                 alert('Duplicate song try again!');
             } else {
+                if(rankedSongs.has(song.rank)) {
+                    let songRemove = rankedSongs.get(song.rank)
+                    songKey.delete(songRemove.name+songRemove.artist)
+                }
                 rankedSongs.set(song.rank, song);
                 songKey.add(song.name+song.artist);
             }
