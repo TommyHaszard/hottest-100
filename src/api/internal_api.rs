@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::env;
+use std::ffi::c_long;
 use std::path::{Path, PathBuf};
 use reqwest::Client;
 use rocket::fs::NamedFile;
@@ -8,9 +10,16 @@ use rocket::serde::json::Json;
 use rocket::State;
 use serde::Serialize;
 use crate::api::db;
-use crate::api::external_api::create_playlist;
-use crate::api::types::{ErrorResponse, Song};
+use crate::api::external_api::{add_songs_to_playlist, authenticate, create_playlist, search_spotify_songs};
+use crate::api::types::{ErrorResponse, SearchSongsQuery, Song};
 use crate::DB_POOL;
+
+#[get("/")]
+pub async fn index() -> Redirect {
+    authenticate().await
+}
+
+
 #[get("/main")]
 pub async fn main_page(cookies: &CookieJar<'_>) -> Result<NamedFile, Redirect> {
     if let Some(token_cookie) = cookies.get_private("api_token") {
@@ -82,7 +91,7 @@ pub async fn get_songs(
         return Err((
             Status::InternalServerError,
             Json(ErrorResponse {
-                error: "No Token".to_string(),
+                error: "No Username Token".to_string(),
             }),
         ));
     }
@@ -102,21 +111,41 @@ pub async fn get_songs(
     Ok(Json(songs))
 }
 
+
+#[get("/search-songs?<query..>")]
+pub async fn search_songs(
+    cookies: &CookieJar<'_>,
+    query: Option<SearchSongsQuery>,
+    client: &State<Client>,
+) -> Result<Json<Vec<Song>>, (Status, Json<ErrorResponse>)> {
+    search_spotify_songs(cookies, query, client).await
+}
+
 #[get("/generate_playlist")]
 pub async fn generate_playlist(cookies: &CookieJar<'_>,
                                client: &State<Client>
 ) -> Result<(), (Status, Json<ErrorResponse>)> {
     let db_pool = DB_POOL.get().unwrap();
 
-    let songs = db::get_song_rankings(db_pool).await.map_err(|err| {
+    let ranked_songs = db::get_song_rankings(db_pool).await.map_err(|err| {
         (
             Status::InternalServerError,
             Json(ErrorResponse {
-                error: format!("Failed to parse Spotify API response: {}", err),
+                error: format!("Failed to get the top songs: {}", err),
             }),
         )
     })?;
 
-    create_playlist(cookies, client).await;
-    todo!()
+    let playlist_id = create_playlist(cookies, client).await.map_err(|err| {
+        (
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: format!("Failed to create Playlist via Spotify API: {:?}", err.1),
+            }),
+        )
+    })?;
+
+    // pass the playlist id into the external function with the songs to make the playlist
+    add_songs_to_playlist(playlist_id, ranked_songs, &cookies, &client).await
+
 }

@@ -13,3 +13,4 @@ sqlx = { version = "0.8.3", features = ["postgres", "runtime-tokio"] }
 postgres = "0.19.9"
 sqlx-postgres = "0.8.3"
 dotenv = "0.15.0"
+anyhow = "1.0.95"

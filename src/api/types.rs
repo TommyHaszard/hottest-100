@@ -22,7 +22,7 @@ pub struct Song {
     pub rank: Option<i32>
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ErrorResponse {
     pub(crate) error: String,
 }
@@ -38,4 +38,10 @@ pub struct CreatePlaylistBody {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) public: bool
+}
+
+#[derive(Serialize, Debug)]
+pub struct AddSongsToPlaylistBody {
+    pub(crate) uris: Vec<String>,
+    pub(crate) position: i32
 }

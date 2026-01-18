@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::env;
+use std::fmt::format;
 use reqwest::Client;
 use rocket::http::{Cookie, CookieJar, Status};
 use rocket::response::Redirect;
@@ -8,13 +9,13 @@ use rocket::State;
 use rocket::time::Duration;
 use crate::DB_POOL;
 use crate::api::db;
-use crate::api::types::{AccessTokenResponse, CreatePlaylistBody, CreatePlaylistId, ErrorResponse, SearchSongsQuery, Song};
+use crate::api::internal_api::index;
+use crate::api::types::{AccessTokenResponse, AddSongsToPlaylistBody, CreatePlaylistBody, CreatePlaylistId, ErrorResponse, SearchSongsQuery, Song};
 
 static SPOTIFY_AUTH_URL: &str = "https://accounts.spotify.com/authorize";
 static SPOTIFY_TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 
-#[get("/")]
-pub async fn index() -> Redirect {
+pub async fn authenticate() -> Redirect {
     let db_pool = DB_POOL.get().unwrap();
     let client_id = db::get_client_id(db_pool).await.expect("Failed to get client id");
     if client_id.is_none() {
@@ -45,7 +46,7 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
         Redirect::to("/fail");
     }
 
-    let redirect_uri = std::env::var("SPOTIFY_REDIRECT_URI").expect("SPOTIFY_REDIRECT_URI must be set");
+    let redirect_uri = env::var("SPOTIFY_REDIRECT_URI").expect("SPOTIFY_REDIRECT_URI must be set");
 
     let client = Client::new();
     let response = client
@@ -125,6 +126,8 @@ pub async fn create_playlist(cookies: &CookieJar<'_>,
         )
     })?;
 
+    let split_name_trimmed = split_name.trim().replace('\\', "").replace('\"', "");
+
     let access_token_opt = cookies.get_private("api_token").map(|cookie| cookie.value().to_string());
     if access_token_opt.is_none() {
         return Err((
@@ -152,8 +155,14 @@ pub async fn create_playlist(cookies: &CookieJar<'_>,
 
     let create_spotify_playlist = format!(
         "https://api.spotify.com/v1/users/{}/playlists",
-        split_name
+        split_name_trimmed
     );
+
+    rocket::info!("JSON {:#?}", json_body);
+
+    rocket::info!("URL {:#?}", create_spotify_playlist);
+
+
 
     let response = client
         .post(&create_spotify_playlist)
@@ -183,6 +192,76 @@ pub async fn create_playlist(cookies: &CookieJar<'_>,
             ))
         }
     } else {
+        if let Ok(data) = response.json::<serde_json::Value>().await {
+            rocket::error!("Failed: {}", data);
+            Err((
+                Status::InternalServerError,
+                Json(ErrorResponse {
+                    error: format!("Failed to post to Spotify API - {}", data),
+                }),
+            ))
+        } else {
+            Err((
+                Status::InternalServerError,
+                Json(ErrorResponse {
+                    error: "Failed to parse Spotify API response".to_string(),
+                }),
+            ))
+        }
+    }
+}
+pub async fn add_songs_to_playlist(create_playlist_id: CreatePlaylistId,
+                                   ranked_song_uris: Vec<String>,
+                                    cookies: &CookieJar<'_>,
+                                   client: &State<Client>) -> Result<(), (Status, Json<ErrorResponse>)> {
+    let access_token_opt = cookies.get_private("api_token").map(|cookie| cookie.value().to_string());
+    if access_token_opt.is_none() {
+        return Err((
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: "No Access Token".to_string(),
+            }),
+        ));
+    }
+
+    let access_token = access_token_opt.unwrap();
+
+    let add_songs_to_playlist = AddSongsToPlaylistBody {
+        uris: ranked_song_uris,
+        position: 0,
+    };
+
+    let json_body = serde_json::to_string(&add_songs_to_playlist).map_err(|err| {
+        (
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: format!("Failed to parse ranked songs into JSON: {}", err),
+            }),
+        )
+    })?;
+
+    let create_spotify_playlist = format!(
+        "https://api.spotify.com/v1/playlists/{}/tracks",
+        create_playlist_id.id
+    );
+
+    let response = client
+        .post(&create_spotify_playlist)
+        .body(json_body)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await.map_err(|err| {
+        (
+            Status::InternalServerError,
+            Json(ErrorResponse {
+                error: format!("Failed to add ranked songs to playlist via Spotify API: {}", err),
+            }),
+        )
+    })?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
         Err((
             Status::InternalServerError,
             Json(ErrorResponse {
@@ -193,7 +272,7 @@ pub async fn create_playlist(cookies: &CookieJar<'_>,
 }
 
 #[get("/search-songs?<query..>")]
-pub async fn search_songs(
+pub async fn search_spotify_songs(
     cookies: &CookieJar<'_>,
     query: Option<SearchSongsQuery>,
     client: &State<Client>,
