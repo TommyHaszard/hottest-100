@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO rankings (user_id, song_id, rank)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (user_id, rank) DO UPDATE SET\n                song_id = EXCLUDED.song_id\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7cc01d15420092762465235b3649970946a8e70f2faffeae027e11e288f27218"
+}

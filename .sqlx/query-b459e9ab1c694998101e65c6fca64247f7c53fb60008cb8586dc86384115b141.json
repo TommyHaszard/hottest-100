@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO songs (name, artist, uri, album_cover_url)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (name, artist) DO UPDATE SET\n                uri = EXCLUDED.uri,\n                album_cover_url = EXCLUDED.album_cover_url\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b459e9ab1c694998101e65c6fca64247f7c53fb60008cb8586dc86384115b141"
+}

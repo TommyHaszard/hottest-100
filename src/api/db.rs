@@ -8,17 +8,6 @@ pub struct User {
     pub name: String,
 }
 
-async fn get_config_value(pool: &PgPool, key: &str) -> Result<Option<String>, String> {
-    let row = sqlx::query!(
-        "SELECT value FROM config WHERE key = $1",
-        key
-    )
-        .fetch_optional(pool)
-        .await.unwrap();
-
-    Ok(row.map(|r| r.value))
-}
-
 pub async fn get_or_insert_user(pool: &PgPool, name: &str) -> Result<User, sqlx::Error> {
     // Try to find the user first
     if let Some(user) = get_user(pool, name).await? {
@@ -100,19 +89,6 @@ pub async fn insert_or_update_songs(
     tx.commit().await?;
 
     Ok(())
-}
-
-
-pub async fn get_client_id(pool: &PgPool) -> Result<Option<String>, String> {
-    get_config_value(pool, "CLIENT_ID").await
-}
-
-pub async fn get_client_secret(pool: &PgPool) -> Result<Option<String>, String> {
-    get_config_value(pool, "CLIENT_SECRET").await
-}
-
-pub async fn get_redirect_uri(pool: &PgPool) -> Result<Option<String>, String> {
-    get_config_value(pool, "REDIRECT_URI").await
 }
 
 #[derive(sqlx::FromRow)]

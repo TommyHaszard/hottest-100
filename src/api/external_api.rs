@@ -16,9 +16,8 @@ static SPOTIFY_AUTH_URL: &str = "https://accounts.spotify.com/authorize";
 static SPOTIFY_TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 
 pub async fn authenticate() -> Redirect {
-    let db_pool = DB_POOL.get().unwrap();
-    let client_id = db::get_client_id(db_pool).await.expect("Failed to get client id");
-    if client_id.is_none() {
+    let client_id = env::var("SPOTIFY_CLIENT");
+    if client_id.is_err() {
         Redirect::to("/fail");
     }
 
@@ -36,13 +35,14 @@ pub async fn authenticate() -> Redirect {
 #[get("/callback?<code>")]
 pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
     let db_pool = DB_POOL.get().unwrap();
-    let client_id = db::get_client_id(db_pool).await.expect("Failed to get client id");
-    if client_id.is_none() {
+
+    let client_id = env::var("SPOTIFY_CLIENT");
+    if client_id.is_err() {
         Redirect::to("/fail");
     }
 
-    let client_secret = db::get_client_secret(db_pool).await.expect("publicled to get client id");
-    if client_secret.is_none() {
+    let client_secret = env::var("SPOTIFY_SECRET");
+    if client_secret.is_err() {
         Redirect::to("/fail");
     }
 
