@@ -146,7 +146,7 @@ pub async fn get_song_rankings(pool: &PgPool) -> Result<Vec<String>, sqlx::Error
         GROUP BY
             s.id, s.name
         ORDER BY
-            COUNT(r.user_id) + COALESCE(0.15 * (11-AVG(r.rank)), 0) DESC, s.name
+            COUNT(r.user_id) + COALESCE(0.15 * (11-AVG(r.rank)), 0) ASC, s.name
         "#,
     ).fetch_all(pool).await?;
 

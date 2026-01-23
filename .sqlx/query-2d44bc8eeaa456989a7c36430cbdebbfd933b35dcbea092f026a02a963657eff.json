@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            s.uri as URI\n        FROM\n            songs s\n        LEFT JOIN\n            rankings r ON s.id = r.song_id\n        GROUP BY\n            s.id, s.name\n        ORDER BY\n            COUNT(r.user_id) + COALESCE(0.15 * (11-AVG(r.rank)), 0) ASC, s.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2d44bc8eeaa456989a7c36430cbdebbfd933b35dcbea092f026a02a963657eff"
+}
