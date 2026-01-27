@@ -1,29 +1,71 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Beefarm's Hottest 100</title>
-    <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hottest 100</title>
+  <link rel="stylesheet" href="design-system.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<div class="container">
-    <div class="header-div">
-        <h1>Hottest 100</h1>
-        <h2>Presented by "I'm Sick of Everyone" &#128522;</h2>
-    </div>
-    <div id="content">
-        <!-- The content will change based on the route -->
-        <div id="left">
+  <!-- Header -->
+  <header class="header">
+    <a href="/" class="header-logo">Hottest <span>100</span></a>
+    <a href="music_taste.html" class="btn btn-secondary">View Music Taste →</a>
+  </header>
 
+  <!-- Main Content -->
+  <main class="main">
+    <div class="layout-split">
+      <!-- Left Panel: Your Rankings -->
+      <section class="panel" id="rankings-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Your Top 10</h2>
+          <button class="btn btn-primary" id="save-btn">Save</button>
         </div>
-        <div id="right">
-
+        <div id="rankings-list" class="song-list">
+          <div class="empty-state">
+            <div class="empty-state-icon">🎵</div>
+            <p class="empty-state-text">Search for songs to add to your list</p>
+          </div>
         </div>
-    </div>
-</div>
+      </section>
 
-<script src="script.js"></script>
+      <!-- Right Panel: Search -->
+      <section class="panel" id="search-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Search Songs</h2>
+        </div>
+
+        <!-- Search Form -->
+        <form id="search-form" class="search-form">
+          <div class="search-row">
+            <input
+              type="text"
+              id="search-input"
+              class="input"
+              placeholder="Search for a song..."
+              required
+            >
+            <input
+              type="number"
+              id="rank-input"
+              class="input input-rank"
+              placeholder="Rank"
+              min="1"
+              max="10"
+              required
+            >
+          </div>
+          <button type="submit" class="btn btn-primary">Search</button>
+        </form>
+
+        <!-- Search Results -->
+        <div id="search-results" class="song-list"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
 </body>
 </html>

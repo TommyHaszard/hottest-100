@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH user_pairs AS (\n    SELECT \n        r1.user_id AS user1_id,\n        r2.user_id AS user2_id,\n        r1.song_id,\n        r1.rank AS user1_rank,\n        r2.rank AS user2_rank,\n        ABS(r1.rank - r2.rank) AS rank_difference,\n        s.artist\n    FROM rankings r1\n    JOIN rankings r2 \n        ON r1.song_id = r2.song_id \n        AND r1.user_id < r2.user_id\n    JOIN songs s ON r1.song_id = s.id\n),\nsong_overlap AS (\n    SELECT \n        user1_id,\n        user2_id,\n        COUNT(*) AS overlapping_songs,\n        COUNT(DISTINCT artist) AS artists_in_overlap,\n        AVG(rank_difference) AS avg_rank_difference,\n        COUNT(*) * 10.0 - AVG(rank_difference) AS song_relationship_strength\n    FROM user_pairs\n    GROUP BY user1_id, user2_id\n),\nartist_overlap AS (\n    SELECT \n        r1.user_id AS user1_id,\n        r2.user_id AS user2_id,\n        COUNT(DISTINCT s1.artist) AS shared_artists,\n        COUNT(*) AS total_artist_overlaps,\n        AVG(ABS(r1.rank - r2.rank)) AS avg_artist_rank_diff\n    FROM rankings r1\n    JOIN rankings r2 ON r1.user_id < r2.user_id\n    JOIN songs s1 ON r1.song_id = s1.id\n    JOIN songs s2 ON r2.song_id = s2.id\n    WHERE s1.artist = s2.artist\n    GROUP BY r1.user_id, r2.user_id\n),\noverlapping_song_details AS (\n    -- Get the song details for each pair with full information\n    SELECT \n        up.user1_id,\n        up.user2_id,\n        JSON_AGG(\n            JSON_BUILD_OBJECT(\n                'song_name', s.name,\n                'artist', s.artist,\n                'user1_rank', up.user1_rank,\n                'user2_rank', up.user2_rank,\n                'rank_difference', up.rank_difference\n            ) ORDER BY up.rank_difference ASC, up.user1_rank ASC\n        ) AS songs\n    FROM user_pairs up\n    JOIN songs s ON up.song_id = s.id\n    GROUP BY up.user1_id, up.user2_id\n),\nartist_detail_pairs AS (\n    -- Get all song pairs by the same artist for each user pair\n    SELECT \n        r1.user_id AS user1_id,\n        r2.user_id AS user2_id,\n        s1.artist,\n        s1.name AS user1_song,\n        r1.rank AS user1_rank,\n        s2.name AS user2_song,\n        r2.rank AS user2_rank,\n        ABS(r1.rank - r2.rank) AS rank_difference\n    FROM rankings r1\n    JOIN rankings r2 ON r1.user_id < r2.user_id\n    JOIN songs s1 ON r1.song_id = s1.id\n    JOIN songs s2 ON r2.song_id = s2.id\n    WHERE s1.artist = s2.artist\n),\nartist_overlap_details AS (\n    -- Aggregate artist details with all song combinations\n    SELECT \n        user1_id,\n        user2_id,\n        JSON_AGG(\n            JSON_BUILD_OBJECT(\n                'artist', artist,\n                'user1_song', user1_song,\n                'user1_rank', user1_rank,\n                'user2_song', user2_song,\n                'user2_rank', user2_rank,\n                'rank_difference', rank_difference\n            ) ORDER BY rank_difference ASC, user1_rank ASC\n        ) AS artist_details\n    FROM artist_detail_pairs\n    GROUP BY user1_id, user2_id\n),\ncombined_metrics AS (\n    SELECT \n        COALESCE(so.user1_id, ao.user1_id) AS user1_id,\n        COALESCE(so.user2_id, ao.user2_id) AS user2_id,\n        -- Song metrics\n        COALESCE(so.overlapping_songs, 0) AS overlapping_songs,\n        COALESCE(so.avg_rank_difference, 0) AS avg_song_rank_diff,\n        COALESCE(so.song_relationship_strength, 0) AS song_strength,\n        -- Artist metrics\n        COALESCE(ao.shared_artists, 0) AS shared_artists,\n        COALESCE(ao.total_artist_overlaps, 0) AS artist_song_overlaps,\n        COALESCE(ao.avg_artist_rank_diff, 0) AS avg_artist_rank_diff,\n        -- Combined compatibility score\n        COALESCE(so.song_relationship_strength, 0) + \n        (COALESCE(ao.shared_artists, 0) * 3.0) - \n        COALESCE(ao.avg_artist_rank_diff, 0) * 0.5 AS combined_compatibility_score\n    FROM song_overlap so\n    FULL OUTER JOIN artist_overlap ao\n        ON so.user1_id = ao.user1_id \n        AND so.user2_id = ao.user2_id\n    WHERE COALESCE(so.overlapping_songs, 0) > 0 \n       OR COALESCE(ao.shared_artists, 0) > 0\n)\nSELECT \n    u1.display_name AS user_1,\n    u2.display_name AS user_2,\n    cm.overlapping_songs AS overlapping_songs,\n    CAST(ROUND(cm.avg_song_rank_diff, 2) AS DOUBLE PRECISION) AS song_rank_diff,\n    CAST(ROUND(cm.song_strength, 2) AS DOUBLE PRECISION) AS song_relationship_strength,\n    cm.shared_artists AS overlapping_artists,\n    cm.artist_song_overlaps AS total_songs_shared_artists,\n    CAST(ROUND(cm.avg_artist_rank_diff, 2) AS DOUBLE PRECISION) AS artist_rank_diff,\n    CAST(ROUND(cm.combined_compatibility_score, 2) AS DOUBLE PRECISION) AS combined_score,\n    -- Detailed JSON for HTML input\n    COALESCE(osd.songs, '[]'::json) AS overlapping_song_details,\n    COALESCE(aod.artist_details, '[]'::json) AS overlapping_artist_details\nFROM combined_metrics cm\nJOIN users u1 ON cm.user1_id = u1.id\nJOIN users u2 ON cm.user2_id = u2.id\nLEFT JOIN overlapping_song_details osd\n    ON cm.user1_id = osd.user1_id\n    AND cm.user2_id = osd.user2_id\nLEFT JOIN artist_overlap_details aod\n    ON cm.user1_id = aod.user1_id\n    AND cm.user2_id = aod.user2_id\nORDER BY \n    cm.combined_compatibility_score DESC,\n    cm.overlapping_songs DESC,\n    cm.shared_artists DESC\nLIMIT 5;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_1",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_2",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "overlapping_songs",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "song_rank_diff",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 4,
+        "name": "song_relationship_strength",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "overlapping_artists",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "total_songs_shared_artists",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "artist_rank_diff",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "combined_score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "overlapping_song_details",
+        "type_info": "Json"
+      },
+      {
+        "ordinal": 10,
+        "name": "overlapping_artist_details",
+        "type_info": "Json"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "828cc469cb55d6ff5b3eaf731a663d65179cbab19af0d1a1bb51fc532b6a6f4c"
+}

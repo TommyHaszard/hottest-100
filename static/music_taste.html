@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Music Taste Compatibility</title>
+  <link rel="stylesheet" href="design-system.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    .taste-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: var(--space-4);
+      min-height: calc(100vh - var(--header-height) - var(--space-6));
+    }
+
+    @media (max-width: 768px) {
+      .taste-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .pairs-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .pair-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-2) var(--space-3);
+      background-color: var(--color-bg-elevated);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .pair-item:hover {
+      background-color: var(--color-bg-hover);
+      border-color: var(--color-accent);
+    }
+
+    .pair-item.selected {
+      border-color: var(--color-accent);
+      border-left: 4px solid var(--color-accent);
+      background-color: var(--color-bg-hover);
+    }
+
+    .pair-names {
+      font-weight: 600;
+      color: var(--color-text-primary);
+    }
+
+    .pair-score {
+      font-weight: 700;
+      color: var(--color-accent);
+      font-size: var(--font-size-lg);
+    }
+
+    .detail-panel {
+      background-color: var(--color-bg-elevated);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: var(--space-4);
+    }
+
+    .detail-header {
+      text-align: center;
+      margin-bottom: var(--space-4);
+      padding-bottom: var(--space-3);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .detail-header h2 {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .song-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-2);
+      background-color: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+    }
+
+    .song-item-info h4 {
+      font-size: var(--font-size-base);
+      font-weight: 600;
+      color: var(--color-text-primary);
+    }
+
+    .song-item-info .artist {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+    }
+
+    .song-item-ranks {
+      text-align: right;
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+    }
+
+    .artist-item {
+      padding: var(--space-2);
+      background-color: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+    }
+
+    .artist-item h4 {
+      font-size: var(--font-size-base);
+      font-weight: 600;
+      color: var(--color-accent);
+      margin-bottom: var(--space-1);
+    }
+
+    .artist-comparison {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+    }
+
+    .section-title {
+      font-size: var(--font-size-base);
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: var(--space-2);
+      margin-top: var(--space-4);
+    }
+
+    .section-title:first-of-type {
+      margin-top: 0;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <a href="/" class="btn btn-secondary">← Back to Voting</a>
+    <h1 class="header-logo">Music <span>Taste</span></h1>
+  </header>
+
+  <main class="container">
+    <div class="taste-layout">
+      <!-- Pairs List -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Top Matches</h2>
+        </div>
+        <div id="pairs-list" class="pairs-list">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- Detail Panel -->
+      <div id="detail-panel" class="detail-panel">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let matchData = [];
+    let selectedIndex = 0;
+
+    async function fetchData() {
+      try {
+        const response = await fetch('/music-taste');
+        if (!response.ok) throw new Error('Failed to fetch');
+        matchData = await response.json();
+        renderPairsList();
+        renderDetail();
+      } catch (error) {
+        document.getElementById('pairs-list').innerHTML =
+          '<div class="empty-state"><p>Failed to load data</p></div>';
+        document.getElementById('detail-panel').innerHTML =
+          '<div class="empty-state"><p>Failed to load data</p></div>';
+      }
+    }
+
+    function renderPairsList() {
+      const container = document.getElementById('pairs-list');
+
+      if (matchData.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No matches found</p></div>';
+        return;
+      }
+
+      container.innerHTML = matchData.map((pair, index) => `
+        <div class="pair-item ${index === selectedIndex ? 'selected' : ''}"
+             role="button"
+             tabindex="0"
+             onclick="selectPair(${index})"
+             onkeydown="event.key === 'Enter' && selectPair(${index})">
+          <span class="pair-names">${pair.user_1} & ${pair.user_2}</span>
+          <span class="pair-score">${pair.combined_score?.toFixed(2) ?? '—'}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderDetail() {
+      const container = document.getElementById('detail-panel');
+
+      if (matchData.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>Select a pair to view details</p></div>';
+        return;
+      }
+
+      const pair = matchData[selectedIndex];
+      const songs = Array.isArray(pair.overlapping_song_details) ? pair.overlapping_song_details : [];
+      const artists = Array.isArray(pair.overlapping_artist_details) ? pair.overlapping_artist_details : [];
+
+      container.innerHTML = `
+        <div class="detail-header">
+          <h2>${pair.user_1} & ${pair.user_2} <span class="match-badge">${pair.combined_score?.toFixed(2) ?? '—'}</span></h2>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Overlapping Songs</div>
+            <div class="stat-value">${pair.overlapping_songs ?? 0}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Rank Diff</div>
+            <div class="stat-value">${pair.song_rank_diff?.toFixed(2) ?? '—'}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Shared Artists</div>
+            <div class="stat-value">${pair.overlapping_artists ?? 0}</div>
+          </div>
+          <div class="stat-card stat-card-primary">
+            <div class="stat-label">Combined Score</div>
+            <div class="stat-value">${pair.combined_score?.toFixed(2) ?? '—'}</div>
+          </div>
+        </div>
+
+        ${songs.length > 0 ? `
+          <h3 class="section-title">Shared Songs</h3>
+          <div class="song-list">
+            ${songs.map(song => `
+              <div class="song-item">
+                <div class="song-item-info">
+                  <h4>${song.song_name}</h4>
+                  <p class="artist">${song.artist}</p>
+                </div>
+                <div class="song-item-ranks">
+                  ${song.user1_rank === song.user2_rank
+                    ? `Both #${song.user1_rank}`
+                    : `${pair.user_1} #${song.user1_rank}, ${pair.user_2} #${song.user2_rank}`}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${artists.length > 0 ? `
+          <h3 class="section-title">Artist Overlap</h3>
+          <div class="song-list">
+            ${groupByArtist(artists, pair).map(group => `
+              <div class="artist-item">
+                <h4>${group.artist}</h4>
+                ${group.comparisons.map(c => `
+                  <p class="artist-comparison">
+                    ${pair.user_1}: "${c.user1_song}" #${c.user1_rank} —
+                    ${pair.user_2}: "${c.user2_song}" #${c.user2_rank}
+                  </p>
+                `).join('')}
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      `;
+    }
+
+    function groupByArtist(artists, pair) {
+      const grouped = {};
+      artists.forEach(a => {
+        if (!grouped[a.artist]) {
+          grouped[a.artist] = { artist: a.artist, comparisons: [] };
+        }
+        grouped[a.artist].comparisons.push({
+          user1_song: a.user1_song,
+          user1_rank: a.user1_rank,
+          user2_song: a.user2_song,
+          user2_rank: a.user2_rank
+        });
+      });
+      return Object.values(grouped);
+    }
+
+    function selectPair(index) {
+      selectedIndex = index;
+      renderPairsList();
+      renderDetail();
+    }
+
+    // Initialize
+    fetchData();
+  </script>
+</body>
+</html>

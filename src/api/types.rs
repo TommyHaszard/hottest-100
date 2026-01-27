@@ -45,3 +45,18 @@ pub struct AddSongsToPlaylistBody {
     pub(crate) uris: Vec<String>,
     pub(crate) position: i32
 }
+
+#[derive(Serialize, Deserialize, Debug, sqlx::FromRow)]
+pub struct MusicTasteOverview {
+    pub user_1: Option<String>,
+    pub user_2: Option<String>,
+    pub overlapping_songs: Option<i64>,
+    pub song_rank_diff: Option<f64>,
+    pub song_relationship_strength: Option<f64>,
+    pub overlapping_artists: Option<i64>,
+    pub total_songs_shared_artists: Option<i64>,
+    pub artist_rank_diff: Option<f64>,
+    pub combined_score: Option<f64>,
+    pub overlapping_song_details: Option<serde_json::Value>,
+    pub overlapping_artist_details: Option<serde_json::Value>,
+}

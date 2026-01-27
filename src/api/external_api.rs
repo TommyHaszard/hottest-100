@@ -1,19 +1,18 @@
-use crate::api::db;
-use crate::api::internal_api::index;
+use crate::api::internal_api::{login_page, main_page};
 use crate::api::types::{
-    AccessTokenResponse, AddSongsToPlaylistBody, CreatePlaylistBody, CreatePlaylistId,
+    AccessTokenResponse, AddSongsToPlaylistBody, CreatePlaylistBody,
     ErrorResponse, SearchSongsQuery, Song,
 };
-use crate::DB_POOL;
 use reqwest::Client;
 use rocket::http::{Cookie, CookieJar, Status};
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
-use rocket::time::Duration;
 use rocket::State;
+use rocket::time::Duration;
+use rocket::tokio::time::sleep;
 use std::collections::HashSet;
 use std::env;
-use std::fmt::format;
+use std::time::Duration as StdDuration;
 
 static SPOTIFY_AUTH_URL: &str = "https://accounts.spotify.com/authorize";
 static SPOTIFY_TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
@@ -98,6 +97,7 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
         res => {
             // Handle other HTTP statuses
             rocket::error!("Response was not successful: {:?}", res.status());
+            return Redirect::to("/fail");
         }
     }
 
@@ -108,6 +108,7 @@ pub async fn callback(cookies: &CookieJar<'_>, code: String) -> Redirect {
             .max_age(Duration::minutes(60)),
     );
 
+    sleep(StdDuration::from_secs(3)).await;
     Redirect::to("/main")
 }
 
@@ -320,7 +321,7 @@ pub async fn search_spotify_songs(
         .map(|cookie| cookie.value().to_string());
 
     if token.is_none() {
-        index().await;
+        login_page().await;
         let token2 = cookies
             .get_private("api_token")
             .map(|cookie| cookie.value().to_string());
